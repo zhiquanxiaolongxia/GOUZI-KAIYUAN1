@@ -6,14 +6,21 @@ Uniswap V4 动态费率 Hook 逆向工程报告 —— Robinhood 链 (chainId 46
 
 ## 一句话结论
 
-这个 hook 的判罚机制就是一行代码：
+这个 hook 是**两道关卡**：先用 `gasleft()` 筛出套利机器人，再对它们**掷骰子**概率抽罚。
 
 ```solidity
-if (gasleft() < 5_000_000) fee = 48000;  // 4.8%
-else                       fee = 0;      // 免费
+// 关卡一：gas 门（身份过滤）
+if (gasleft() >= 5_000_000) return 0;              // 免费放行
+
+// 关卡二：掷骰子（概率抽罚）
+r = keccak256(blockhash, prevrandao, timestamp, number, poolId, nonce) % 10000;
+if      (r < 7500) fee = 48000;   // 4.8%   75%
+else if (r < 8500) fee = 95000;   // 9.5%   10%
+else if (r < 9500) fee = 150000;  // 15%    10%
+else               fee = 0;       // 免费    5%
 ```
 
-**它通过 `gasleft()` 识别套利机器人**：套利者为省成本精确掐 gasLimit（实测 23万~135万），普通前端路由给足余量（7,500,004 / 10,000,000 这类默认值）。于是剩余 gas 成了"来者是不是套利者"的天然指纹 —— 不需要白名单、不需要读价格、不需要任何外部调用。
+没有预言机，没有外部调用，没有价格锚点。全部实证见 `analysis/真机制-掷骰子.md`。
 
 ---
 
