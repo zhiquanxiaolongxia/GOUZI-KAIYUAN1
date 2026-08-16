@@ -1,167 +1,124 @@
-# HOOK-KAIYUAN1
+# Robinhood 链 Uniswap V4 Hook 逆向档案
 
-Uniswap V4 动态费率 Hook 逆向工程报告 —— Robinhood 链 (chainId 4663)
+Robinhood 链（chainId 4663）上竞品动态费率 hook 的完整逆向记录，按**代次**归档。
+全部结论基于字节码实证与链上受控实验，无源码可用（该链无合约验证）。
 
 ---
 
-## 一句话结论
+## 一句话总结
 
-这个 hook 是**两道关卡**：先用 `gasleft()` 筛出套利机器人，再对它们**掷骰子**概率抽罚。
+**两代 hook 是同一套设计思路的演进：`gas 门（身份过滤）+ 掷骰子（概率抽罚）`。**
+8946B 不是新机制，是 5131B 的参数化增强版 —— 加了全局折扣系数，并且**多了转账能力**。
+
+---
+
+## 代次索引
+
+| | [gen5 · 5131B](gen5-5131B/README.md) | [gen6 · 8946B](gen6-8946B/README.md) |
+|---|---|---|
+| 逆向日期 | 2026-08-11 | 2026-08-16 |
+| 核心机制 | gas 门 + 掷骰子 | **同样是掷骰子** |
+| gas 门阈值 | 5,000,000 | 6,000,000 |
+| 随机种子额外成分 | — | **+ chainid + address(this)**（防跨链重放） |
+| 全局折扣系数 | 无 | **有（slot6，八折）** |
+| `CALL` 指令数 | **0**（无转账能力 ✅） | **3**（有提现口 ⚠️） |
+| `TLOAD` / `TSTORE` | 0 | 有 |
+| 证据强度 | 因果实验 | **过度识别 80/80 + 卡方/KS + 1wei 雪崩** |
+
+### 实例地址
+
+| 代次 | 地址 |
+|---|---|
+| gen6 A | `0x497DFc4A2a7Aa7b5479cB8191b495a7E405500c4` |
+| gen6 B | `0x7266BA24C6dA4A8e6AE931b61728625377eE00c4` |
+
+⚠️ `0x42554Fa546995A393D19B3880D3a4C6709298080` 是**我方自有池**（owner `0x789150Ad…d226`），不是竞品。侦察任何池前先比对 owner 与已知钱包。
+
+---
+
+## gen6 关键结论速览
 
 ```solidity
-// 关卡一：gas 门（身份过滤）
-if (gasleft() >= 5_000_000) return 0;              // 免费放行
+// 关卡一：gas 门（slot3 = 6,000,000）
+if (gasleft() >= 6_000_000) return 0;              // 免费放行
 
-// 关卡二：掷骰子（概率抽罚）
-r = keccak256(blockhash, prevrandao, timestamp, number, poolId, nonce) % 10000;
-if      (r < 7500) fee = 48000;   // 4.8%   75%
-else if (r < 8500) fee = 95000;   // 9.5%   10%
-else if (r < 9500) fee = 150000;  // 15%    10%
-else               fee = 0;       // 免费    5%
+// 关卡二：掷骰子（r 已实证为 [0,9999] 均匀分布）
+uint256 r = keccak256(blockhash, prevrandao, timestamp,
+                      chainid, address(this), key, sender, amount, ...) % 10000;
+
+// 关卡三：三段累积权重选档（slot2）
+if      (r < w1)       base = 50000;   // 5%
+else if (r < w1+w2)    base = 75000;   // 7.5%
+else if (r < w1+w2+w3) base = 100000;  // 10%
+else                   base = 0;       // 免费
+
+// 关卡四：全局折扣（slot6，8946B 新增）
+base = base * (10000 - 2000) / 10000;  // 八折 → 实际 0/4%/6%/8%
 ```
 
-没有预言机，没有外部调用，没有价格锚点。全部实证见 `analysis/真机制-掷骰子.md`。
-
----
-
-## 目标合约
-
-| 代次 | 地址 | 池 | owner |
-|---|---|---|---|
-| 三代 | `0x31Ac5B793C073C7EB15CfC259963CD60004f4080` | USDG/FRONG | `0xc604AE8E12Bc9B55E1729BeD1A985Bb9a1224709` |
-| 五代 | `0x42554Fa546995A393D19B3880D3a4C6709298080` | ETH/xxx | `0x789150Ad7e5F3b56a6ce5c71e531a30cCdfAD226` |
-
-两者 **codehash 完全相同**（`4712c3c6…215f`，5131 字节），仅配置参数不同。
-
----
-
-## 证据链
-
-### 1. opcode 级抓现行
-
-anvil fork + `debug_traceCall` 逐指令 dump，`beforeSwap` 内部只有 3 次 storage 访问和 1 个决定性比较：
-
-```
-step 215  GAS      → 0x3ffffffff9fae        ← 判据来源就是 GAS 指令
-step 467  SLOAD    keccak(poolId,4) → 4     ← swap 计数器
-step 473  SSTORE   keccak(poolId,4) ← 5     ← 计数器 +1
-step 490  SLOAD    slot3 → 0x4c4b40 (5,000,000)
-step 491  LT       5000000 < gasleft()
-step 497  JUMPI    true → 免费 / false → 收费
-```
-
-### 2. 受控实验：只改 gas limit
-
-金额、sender、方向全部锁死，唯一变量是 `eth_call` 的 gas：
-
-| gas limit | fee |
-|---|---|
-| 100,000 → 5,000,000 | **48000（收费）** |
-| **5,024,658** | **48000（临界最后一格）** |
-| **5,024,659** | **0（免费）** |
-| 5,100,000 → 30,000,000 | 0（免费） |
-
-临界点 `5,024,658 − 24,658 = 5,000,000`，**精确等于 slot3**。
-差值 24,658 是 hook 入口前的 gas 开销。
-
-### 3. 真实链上数据反验（三代池 140 笔 tx）
-
-| | gasLimit < 5M | gasLimit ≥ 5M |
+| | A | B |
 |---|---|---|
-| **实际收费 19 笔** | **19（100%）** | **0（零漏报）** |
-| 实际免费 121 笔 | 11 | 110 |
-
-- 收费笔 gasLimit 中位数：**673,289**
-- 免费笔 gasLimit 中位数：**7,500,004**
-
-那 11 个"误报"不是模型错 —— hook 判的是 `gasleft()`，比 tx 的 gasLimit 少了路由消耗，完全自洽。
+| 权重 (w1,w2,w3) | 7000 / 1500 / 500 | 6000 / 1000 / 1000 |
+| 概率 | 4%→70% ┃6%→15% ┃8%→5% ┃**免费 10%** | 4%→60% ┃6%→10% ┃8%→10% ┃**免费 20%** |
+| 期望费率 | **4.1%** | **3.8%** |
 
 ---
 
-## Storage 布局
+## 🔴 演进过程中被推翻的结论
 
-```
-slot0  address owner
-slot1  [tier3][tier2][tier1][dynFlag]   三个 uint24 费率 + 0x800000
-slot2  [thr1][thr2][thr3]               三个 uint24 阈值
-slot3  uint256 gasThreshold             = 5,000,000（两代相同，硬编码常量）
-slot4  mapping(poolId => uint256)       swap 计数器，每笔 +1，不参与定价
-```
+本档案保留了**错误路线**，因为踩坑记录比结论本身更有复用价值。
 
-### 配置对照
-
-| | 三代 USDG/FRONG | 五代 ETH/xxx |
-|---|---|---|
-| tier1 | 48000 (4.8%) | 48000 (4.8%) |
-| tier2 | 95000 (9.5%) | 75000 (7.5%) |
-| tier3 | 150000 (15%) | 100000 (10%) |
-| gasThreshold | 5,000,000 | 5,000,000 |
+1. **「gasleft() 单一判据」**（gen5 初版）→ 被推翻，真机制是 gas 门 + 掷骰子两级。
+2. **「连续费率曲线 0.579%/0.804%/1.099%，按金额分档」**（gen6 初版）→ **全错**。
+   错因：把事件 `data[0]` 当 1e6 精度费率读，该字段实际 33/35 条恒为 10417。
+   **恒定值是解码错误的警报，不是变量。**
+3. **「A/B 的 tierOneFee 不同（55000 vs 50000）」** → 两者 slot1 逐位相同。
 
 ---
 
-## 安全审计结论
+## 🕳️ 最贵的坑
 
-字节码逐 opcode 扫描（5131 字节）：
+### `eth_call` 默认打最新块 = 每次重掷骰子 ★
+目标用 `blockhash/timestamp/prevrandao` 做伪随机，不固定 `block_identifier` 则每次调用结果都不同。
+症状：扫「金额 → 费率」看到一堆变化，误判「金额影响费率」。**真相是块变了，骰子重掷了。**
 
-| opcode | 次数 | 含义 |
-|---|---|---|
-| `CALL` / `STATICCALL` / `DELEGATECALL` | **0** | 无任何外部调用 |
-| `CREATE` / `CREATE2` / `SELFDESTRUCT` | **0** | 无部署、无自毁 |
-| `TLOAD` / `TSTORE` | **0** | 不用 transient storage |
-| `SLOAD` / `SSTORE` | 44 / 10 | 仅读写自身配置与计数器 |
+> **铁律**：任何参数扫描前，先同参数重复 10 次验证确定性。不全同 → 立刻固定区块重来。
 
-**owner 物理上拿不走一分钱** —— 没有 `take`/`donate`/`transfer` 选择器，唯一硬编码地址是 PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`。
+⚠️ 还要区分「进种子」和「决定结果」：金额进 keccak 会让结果变，但那是**重掷骰子**，
+不是「金额越大费率越高」。**要证因果只能改 storage，不能改入参。**
 
-推论：这个 hook **物理上看不见池价**（无外部调用），所以一切"价格偏离判罚"的叙事都不成立。
-
----
-
-## 已知局限（诚实声明）
-
-1. **多档费率（tier2/tier3）的触发条件未解出**。真实链上确有 95000 / 150000 档出现，但分界线未找到。本仓库的 Solidity 实现是**降级版：命中即 tier1**。
-2. **阈值 `7500/1000/1000`（五代 `6000/2000/1000`）物理含义未定**，slot2 字节切分存疑。
-3. **本结论仅适用于 5131 字节 / 权限位 0x0080 的克隆系**。`0xc4` 升级版（8946 字节，带 afterSwap）是另一套字节码，不可混用。
+### 其他
+- **返回值标志位**：V4 lpFeeOverride 带 `0x400000`，原始返回 `4194304` 看着像 419%，减掉才是 0。任何「荒谬的大数值」先怀疑标志位。
+- **beforeSwap selector 漏了 sender 参数** → `0x575e24b4`，且 `eth_call` 的 `from` 必须是 PoolManager。
+- **`0x8fd0b484` 曾被误标为 `defaultFee`** → 实为 gas 门阈值 getter。
 
 ---
 
-## 机制弱点（重要）
+## 对自研 hook 的启示
 
-**这个机制可以被绕过。** 套利者只要把 gasLimit 提到 500 万以上就免费了，代价仅仅是多付一点 gas —— 在 Orbit 链上几乎为零。
-
-它现在有效，纯粹是因为对手还不知道判据是 `gasleft()`。**不建议直接照抄用于生产。**
+- **折扣系数值得抄**：owner 不改档位就能全局调松紧，招商期可先打低折扣拉人。
+- 但 10% × 八折 = **8%**，仍贴着三代实测的 **9.9258% 滑点崩溃临界**。罚金上限守 8~9%。
+- **可绕过性没有改善**：骰子材料全是当块公开值，同块 MEV 依旧可预测；gas 门套利者提高 gasLimit 即免费通行。
+  加 chainid+address 只防跨链重放。**招商材料里必须讲明，别让 LP 以为是铁桶阵。**
+- gen5 的 `CALL=0`（hook 无转账能力）是无需信任设计的核心卖点，**gen6 反而倒退了**。
 
 ---
 
-## 目录结构
+## ⚠️ 未完成项
 
-```
-├── contracts/DynamicFeeHook.sol   可编译实现（已与原版字节码逐点比对）
-├── analysis/                      机制推导与配置对照
-├── scripts/                       全部验证脚本（可复现）
-└── data/                          链上数据快照
-```
+- [ ] gen6 `CALL×3` 的可达性与目标地址审计（**进池/复刻前必做**）
+- [ ] keccak 种子的精确字段顺序与 `abi.encode` 布局（逐字节 fork trace）
+- [ ] 事件 `data[0]` 恒定 10417 的语义
 
-## 复现方法
+---
+
+## 复现
 
 ```bash
-# 起 fork 节点（绕开远端 RPC 的 debug_* 封禁）
-anvil --fork-url https://robinhood.rpc.blxrbdn.com \
-      --fork-block-number 33147572 --port 8546
-
-# 决定性实验：gas 临界点二分
-python scripts/gasproof.py
-
-# 真实 tx 反验
-python scripts/realproof.py
+python3 -m venv .venv && ./.venv/bin/pip install web3 eth-abi eth-utils
+./.venv/bin/python gen6-8946B/scripts/07_overidentification.py    # 决定性实验
+./.venv/bin/python gen6-8946B/scripts/08_uniformity_avalanche.py  # 均匀性 + 雪崩
 ```
 
----
-
-## 逆向过程中踩的坑
-
-| 坑 | 后果 |
-|---|---|
-| **poolKey 的 currency0/1 填错** | 查了一个不存在的池，hook 走 default 分支恒返回 0，白跑两轮 |
-| **返回值偏移读错**（读 36，实际在 **64**） | 所有 fee 扫描全是假阴性，一度用 bug 亲手否掉了正确答案 |
-
-`beforeSwap` 返回 96 字节，**费率在 word2（偏移 64）**：低 22 位是 lpFee，bit22 是 `OVERRIDE_FLAG`。
+RPC: `https://robinhood.rpc.blxrbdn.com`
+各代次脚本索引见 `genN-*/scripts/README.md`，gen6 原始输出见 `gen6-8946B/raw-output/`。

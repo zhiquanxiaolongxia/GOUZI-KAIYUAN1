@@ -1,0 +1,38 @@
+beforeSwap selector: 0xc9ab5a82
+========================================================================================
+S-16: ★ gas 门受控实验 (eth_call 直调 beforeSwap)
+========================================================================================
+
+ --- A/497D hook=0x497dfc4a2a7aa7b5479cb8191b495a7e405500c4
+   gas=30000000    ERR execution reverted
+   gas=10000000    ERR execution reverted
+   gas=8000000     ERR execution reverted
+   gas=6500000     ERR execution reverted
+   gas=6100000     ERR execution reverted
+   gas=6050000     ERR execution reverted
+   gas=6020000     ERR execution reverted
+   gas=6010000     ERR execution reverted
+   gas=6005000     ERR execution reverted
+   gas=6000000     ERR execution reverted
+   gas=5900000     ERR execution reverted
+   gas=5000000     ERR execution reverted
+   gas=3000000     ERR execution reverted
+   gas=1000000     ERR execution reverted
+   gas=500000      ERR execution reverted
+
+ --- B/7266 hook=0x7266ba24c6da4a8e6ae931b61728625377ee00c4
+   gas=30000000    ERR execution reverted
+   gas=10000000    ERR execution reverted
+   gas=8000000     ERR execution reverted
+   gas=6500000     ERR execution reverted
+   gas=6100000     ERR execution reverted
+   gas=6050000     ERR execution reverted
+   gas=6020000     ERR execution reverted
+   gas=6010000     ERR execution reverted
+   gas=6005000     ERR execution reverted
+   gas=6000000     ERR execution reverted
+   gas=5900000     ERR execution reverted
+   gas=5000000     ERR execution reverted
+   gas=3000000     ERR execution reverted
+   gas=1000000     ERR execution reverted
+   gas=500000      ERR execution reverted

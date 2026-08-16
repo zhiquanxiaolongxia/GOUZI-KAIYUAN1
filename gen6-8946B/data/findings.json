@@ -1,0 +1,203 @@
+{
+  "meta": {
+    "chain": "Robinhood",
+    "chainId": 4663,
+    "rpc": "https://robinhood.rpc.blxrbdn.com",
+    "date": "2026-08"
+  },
+  "instances": {
+    "A": {
+      "addr": "0x497dfc4a2a7aa7b5479cb8191b495a7e405500c4",
+      "poolId": "0x717fd7ee...020effa1",
+      "owner": "0x6a4adf8b63abd6e9fed0d547bfe3419b3ce3d471",
+      "slots": {
+        "slot1": "0x186a00124f800c350",
+        "slot2": "0x1f405dc1b58",
+        "slot3": "0x5b8d80",
+        "slot6": "0x7d001"
+      },
+      "weights": {
+        "w1": 7000,
+        "w2": 1500,
+        "w3": 500
+      },
+      "cumulative": [
+        7000,
+        8500,
+        9000
+      ],
+      "tiers": [
+        50000,
+        75000,
+        100000
+      ],
+      "effective_fees": [
+        0,
+        40000,
+        60000,
+        80000
+      ],
+      "probabilities": {
+        "4%": 0.7,
+        "6%": 0.15,
+        "8%": 0.05,
+        "free": 0.1
+      },
+      "expected_fee_pct": 4.1
+    },
+    "B": {
+      "addr": "0x7266ba24c6da4a8e6ae931b61728625377ee00c4",
+      "poolId": "0xa53aed8e...614f2a28",
+      "owner": "0x2d23513675e9029b4e08080fdf9cecd1e5bc6105",
+      "slots": {
+        "slot1": "0x186a00124f800c350",
+        "slot2": "0x3e803e81770",
+        "slot3": "0x5b8d80",
+        "slot6": "0x7d001"
+      },
+      "weights": {
+        "w1": 6000,
+        "w2": 1000,
+        "w3": 1000
+      },
+      "cumulative": [
+        6000,
+        7000,
+        8000
+      ],
+      "tiers": [
+        50000,
+        75000,
+        100000
+      ],
+      "effective_fees": [
+        0,
+        40000,
+        60000,
+        80000
+      ],
+      "probabilities": {
+        "4%": 0.6,
+        "6%": 0.1,
+        "8%": 0.1,
+        "free": 0.2
+      },
+      "expected_fee_pct": 3.8
+    }
+  },
+  "gas_gate": {
+    "threshold_gasleft": 6000000,
+    "bisect_charged_at_callgas": 6024219,
+    "bisect_free_at_callgas": 6024220,
+    "overhead": 24219
+  },
+  "discount": {
+    "slot": 6,
+    "enabled_mask": "0xff",
+    "disc_shift": 8,
+    "disc_value": 2000,
+    "formula": "base*(10000-disc)/10000",
+    "effect": "20% off"
+  },
+  "evidence": {
+    "overidentification": {
+      "hits": 80,
+      "total": 80,
+      "pct": 100.0
+    },
+    "dual_path_crosscheck": {
+      "agree": 8,
+      "total": 8
+    },
+    "uniformity": {
+      "n": 80,
+      "mean": 5115.1,
+      "theoretical_mean": 4999.5,
+      "buckets": [
+        6,
+        10,
+        10,
+        5,
+        7,
+        8,
+        8,
+        10,
+        10,
+        6
+      ],
+      "chi2": 4.25,
+      "chi2_df": 9,
+      "chi2_crit_p05": 16.92,
+      "ks_D": 0.0564,
+      "ks_crit_p05": 0.1521,
+      "verdict": "uniform"
+    },
+    "avalanche": {
+      "baseline_r": 7485,
+      "amt_minus_2e16": 5713,
+      "amt_plus_1wei": 2257,
+      "direction_flipped": 112,
+      "block_minus_2": 3091,
+      "repeat_same_params": [
+        7485,
+        7485,
+        7485
+      ]
+    },
+    "causal_slot6": {
+      "0x7d001": [
+        0,
+        40000,
+        60000,
+        80000
+      ],
+      "0x1": [
+        0,
+        50000,
+        75000,
+        100000
+      ],
+      "0x138801": [
+        0,
+        25000,
+        37500,
+        50000
+      ],
+      "0x232801": [
+        0,
+        5000,
+        7500,
+        10000
+      ],
+      "0x7d000": [
+        0,
+        50000,
+        75000,
+        100000
+      ]
+    }
+  },
+  "security": {
+    "DELEGATECALL": 0,
+    "SELFDESTRUCT": 0,
+    "CREATE": 0,
+    "CALL": 3,
+    "TLOAD_TSTORE": true,
+    "note": "CALL=3 含 ETH 转账与 0xa9059cbb ERC20 transfer，有提现口，可达性未审"
+  },
+  "selectors": {
+    "beforeSwap": "0x575e24b4",
+    "feeForRoll(uint16)": "0x14724809",
+    "tierOneFee": "0x9a50c628",
+    "tierTwoFee": "0x08ac6289",
+    "tierThreeFee": "0x9d951b3b",
+    "defaultFee": "0x5a6c72d0",
+    "BPS_DENOMINATOR": "0xe1a45218",
+    "gasGateThreshold": "0x8fd0b484"
+  },
+  "open_questions": [
+    "keccak 种子精确字段顺序与 abi.encode 布局未逐字节确认",
+    "CALL x3 的可达性与目标地址未审",
+    "事件 data[0] 恒定 10417 的语义未知"
+  ]
+}
